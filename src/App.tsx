@@ -12,7 +12,7 @@ import TrackingPage from './pages/TrackingPage';
 import DashboardPage from './pages/DashboardPage';
 import NotFound from './pages/NotFound';
 import AuthPage from './pages/AuthPage';
-
+import ProtectedRoute from './components/ProtectedRoute';
 const queryClient = new QueryClient();
 
 const App = () => {
@@ -26,10 +26,24 @@ const App = () => {
           <Navbar />
 
           <Routes>
+            <Route
+              path="/donate"
+              element={
+                <ProtectedRoute>
+                  <DonatePage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/request"
+              element={
+                <ProtectedRoute>
+                  <RequestPage />
+                </ProtectedRoute>
+              }
+            />
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<AuthPage />} /> {/* ✅ ADD THIS */}
-            <Route path="/donate" element={<DonatePage />} />
-            <Route path="/request" element={<RequestPage />} />
             <Route path="/tracking" element={<TrackingPage />} />
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="*" element={<NotFound />} />
