@@ -3,9 +3,8 @@ import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Camera, Clock, MapPin, Package, CheckCircle2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { CheckCircle2 } from "lucide-react";
 
 import { collection, addDoc, Timestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -14,28 +13,49 @@ const DonatePage = () => {
   const [submitted, setSubmitted] = useState(false);
   const { toast } = useToast();
 
+  const [loading, setLoading] = useState(false);
+
   const [formData, setFormData] = useState({
-    type: "",
     quantity: "",
     description: "",
     location: ""
   });
 
+  // 🔥 HANDLE SUBMIT (REAL-TIME READY)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (!formData.quantity || !formData.description || !formData.location) {
+      toast({
+        title: "Missing fields",
+        description: "Please fill all fields"
+      });
+      return;
+    }
+
     try {
+      setLoading(true);
+
       await addDoc(collection(db, "donations"), {
         ...formData,
         status: "pending",
-        createdAt: Timestamp.now()
+        priority: "normal",
+
+        // 🔥 AI-ready fields
+        createdAt: Timestamp.now(),
+        lat: 19.9975, // Nashik (hackathon trick)
+        lng: 73.7898,
+
+        // 🔥 system flags
+        matched: false,
+        assigned: false
       });
 
       setSubmitted(true);
 
       toast({
-        title: "Food listing submitted!",
-        description: "AI matching started 🚀"
+        title: "Donation Submitted 🚀",
+        description: "AI matching started in real-time"
       });
 
     } catch (error) {
@@ -44,23 +64,47 @@ const DonatePage = () => {
         title: "Error",
         description: "Failed to submit donation"
       });
+    } finally {
+      setLoading(false);
     }
   };
 
+  // ✅ SUCCESS SCREEN
   if (submitted) {
     return (
       <div className="min-h-screen pt-24 pb-16">
         <div className="container mx-auto px-4 max-w-lg">
-          <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass-card-elevated p-10 text-center">
+          <motion.div
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="glass-card-elevated p-10 text-center"
+          >
             <CheckCircle2 className="w-10 h-10 text-primary mx-auto mb-4" />
             <h2 className="text-xl font-bold">Donation Submitted!</h2>
-            <Button onClick={() => setSubmitted(false)} className="mt-4">Donate More</Button>
+            <p className="text-sm text-muted-foreground mt-2">
+              AI is matching this food with nearby requests...
+            </p>
+
+            <Button
+              onClick={() => {
+                setSubmitted(false);
+                setFormData({
+                  quantity: "",
+                  description: "",
+                  location: ""
+                });
+              }}
+              className="mt-4"
+            >
+              Donate More
+            </Button>
           </motion.div>
         </div>
       </div>
     );
   }
 
+  // ✅ FORM UI
   return (
     <div className="min-h-screen pt-24 pb-16">
       <div className="container mx-auto px-4 max-w-2xl">
@@ -70,27 +114,32 @@ const DonatePage = () => {
           <form onSubmit={handleSubmit} className="space-y-6">
 
             <Input
-              placeholder="Quantity"
+              placeholder="Quantity (e.g. 100 meals)"
+              value={formData.quantity}
               onChange={(e) =>
                 setFormData({ ...formData, quantity: e.target.value })
               }
             />
 
             <Textarea
-              placeholder="Description"
+              placeholder="Description (Veg, Non-veg, urgent etc.)"
+              value={formData.description}
               onChange={(e) =>
                 setFormData({ ...formData, description: e.target.value })
               }
             />
 
             <Input
-              placeholder="Location"
+              placeholder="Location (e.g. Nashik)"
+              value={formData.location}
               onChange={(e) =>
                 setFormData({ ...formData, location: e.target.value })
               }
             />
 
-            <Button type="submit">Submit</Button>
+            <Button type="submit" disabled={loading} className="w-full">
+              {loading ? "Submitting..." : "Submit Donation"}
+            </Button>
 
           </form>
         </motion.div>
