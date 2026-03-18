@@ -1,3 +1,5 @@
+import { getDoc } from 'firebase/firestore';
+import { auth, db } from '@/lib/firebase';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
@@ -9,18 +11,21 @@ import {
   doc,
   updateDoc,
   Timestamp,
+  QueryDocumentSnapshot,
+  DocumentData,
 } from 'firebase/firestore';
 
-import { db } from '@/lib/firebase';
 import { useEffect, useState } from 'react';
 
+// ✅ TYPE
 type Food = {
   id: string;
   quantity: string;
   description: string;
   location: string;
   status: string;
-  matched?: boolean;
+  expiryTime?: string;
+  createdAt?: { seconds: number };
 };
 
 const RequestPage = () => {
@@ -28,99 +33,134 @@ const RequestPage = () => {
   const [availableFood, setAvailableFood] = useState<Food[]>([]);
   const [loadingId, setLoadingId] = useState<string | null>(null);
 
-  // 🔥 REAL-TIME LISTENER (ONLY AVAILABLE FOOD)
+  // 🔥 REAL-TIME LISTENER + SMART SORT
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'donations'), (snapshot) => {
-      const data: Food[] = snapshot.docs.map((docSnap) => {
-        const d = docSnap.data();
+      const data: Food[] = snapshot.docs.map(
+        (docSnap: QueryDocumentSnapshot<DocumentData>) => {
+          const d = docSnap.data();
 
-        return {
-          id: docSnap.id,
-          quantity: String(d.quantity ?? ''),
-          description: String(d.description ?? ''),
-          location: String(d.location ?? ''),
-          status: String(d.status ?? 'pending'),
-          matched: Boolean(d.matched ?? false),
-        };
-      });
+          return {
+            id: docSnap.id,
+            quantity: String(d.quantity ?? ''),
+            description: String(d.description ?? ''),
+            location: String(d.location ?? ''),
+            status: String(d.status ?? 'pending'),
+            expiryTime: d.expiryTime ?? '',
+            createdAt: d.createdAt ?? null,
+          };
+        }
+      );
 
-      const filtered: Food[] = data.filter((f) => f.status === 'pending');
+      const filtered = data.filter((f) => f.status === 'pending');
 
+      // 🔥 SMART AI SORT
       const scoreFood = (food: Food): number => {
         let score = 0;
 
-        score += Number(food.quantity || 0) * 2;
+        // 1️⃣ Quantity
+        const qty = Number(food.quantity || 0);
+        score += qty * 2;
 
+        // 2️⃣ Urgent keyword
         if (food.description.toLowerCase().includes('urgent')) {
           score += 50;
+        }
+
+        // 3️⃣ Expiry priority
+        if (food.expiryTime) {
+          const hours =
+            (new Date(food.expiryTime).getTime() - Date.now()) /
+            (1000 * 60 * 60);
+
+          if (hours <= 2) score += 100;
+          else if (hours <= 6) score += 70;
+          else if (hours <= 12) score += 40;
+        }
+
+        // 4️⃣ Recent (latest first)
+        if (food.createdAt?.seconds) {
+          score += food.createdAt.seconds / 100000;
         }
 
         return score;
       };
 
-      const sorted: Food[] = [...filtered].sort(
-        (a, b) => scoreFood(b) - scoreFood(a)
-      );
+      const sorted = [...filtered].sort((a, b) => scoreFood(b) - scoreFood(a));
 
       setAvailableFood(sorted);
     });
 
     return () => unsub();
   }, []);
-  // 🔥 FULL AUTO MATCH SYSTEM
+
+  // 🔥 REQUEST FUNCTION (WITH LOCATION)
   const handleRequest = async (food: Food) => {
     try {
       setLoadingId(food.id);
 
-      // 1️⃣ Create request
-      const requestRef = await addDoc(collection(db, 'requests'), {
-        foodId: food.id,
-        status: 'requested',
-        createdAt: Timestamp.now(),
-      });
+      const user = auth.currentUser;
+      if (!user) {
+        toast({ title: 'Login Required' });
+        return;
+      }
 
-      // 2️⃣ Update donation status
-      await updateDoc(doc(db, 'donations', food.id), {
-        status: 'assigned',
-        matched: true,
-      });
+      navigator.geolocation.getCurrentPosition(async (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
 
-      // 3️⃣ Create delivery
-      const deliveryRef = await addDoc(collection(db, 'deliveries'), {
-        foodId: food.id,
-        requestId: requestRef.id,
-        status: 'assigned',
-        driver: 'Auto Assigned',
-        eta: '20 min',
-        createdAt: Timestamp.now(),
-      });
+        const donationRef = doc(db, 'donations', food.id);
+        const donationSnap = await getDoc(donationRef);
 
-      // 4️⃣ SIMULATE REAL DELIVERY FLOW 🔥
-      setTimeout(async () => {
-        await updateDoc(doc(db, 'deliveries', deliveryRef.id), {
-          status: 'in_transit',
+        if (!donationSnap.exists()) return;
+
+        const donationData = donationSnap.data();
+
+        const requestRef = await addDoc(collection(db, 'requests'), {
+          foodId: food.id,
+          donorId: donationData.userId,
+          requesterId: user.uid,
+          requesterLat: lat,
+          requesterLng: lng,
+          requesterLocation: food.location,
+          status: 'pending',
+          createdAt: Timestamp.now(),
         });
-      }, 5000);
 
-      setTimeout(async () => {
-        await updateDoc(doc(db, 'deliveries', deliveryRef.id), {
-          status: 'delivered',
+        await updateDoc(doc(db, 'donations', food.id), {
+          status: 'assigned',
+          matched: true,
         });
-      }, 10000);
 
-      toast({
-        title: 'Matched & Assigned 🚀',
-        description: 'Delivery started automatically',
+        await addDoc(collection(db, 'deliveries'), {
+          foodId: food.id,
+          requestId: requestRef.id,
+          status: 'assigned',
+          createdAt: Timestamp.now(),
+        });
+
+        toast({
+          title: 'Request Sent 🚀',
+          description: 'Location shared with donor',
+        });
       });
     } catch (error) {
       console.error(error);
-      toast({
-        title: 'Error',
-        description: 'Request failed',
-      });
+      toast({ title: 'Error', description: 'Request failed' });
     } finally {
       setLoadingId(null);
     }
+  };
+
+  // 🔥 EXPIRY UI COLOR
+  const getExpiryLabel = (expiry?: string) => {
+    if (!expiry) return null;
+
+    const hours = (new Date(expiry).getTime() - Date.now()) / (1000 * 60 * 60);
+
+    if (hours <= 2) return 'text-red-500 ⚠️ Expiring soon';
+    if (hours <= 6) return 'text-yellow-500 ⏳ Medium urgency';
+    return 'text-green-500 ✅ Safe';
   };
 
   return (
@@ -129,7 +169,6 @@ const RequestPage = () => {
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
           <h1 className="text-3xl font-bold mb-6">Available Food</h1>
 
-          {/* EMPTY STATE */}
           {availableFood.length === 0 && (
             <p className="text-muted-foreground">No food available right now</p>
           )}
@@ -142,12 +181,22 @@ const RequestPage = () => {
               >
                 <div>
                   <p className="font-semibold">{food.description}</p>
+
                   <p className="text-sm text-gray-500">
                     {food.quantity} servings • {food.location}
                   </p>
 
-                  {/* 🔥 AI PRIORITY BADGE */}
-                  {food.description?.toLowerCase().includes('urgent') && (
+                  {/* 🔥 EXPIRY BADGE */}
+                  {food.expiryTime && (
+                    <p
+                      className={`text-xs mt-1 ${getExpiryLabel(food.expiryTime)}`}
+                    >
+                      {getExpiryLabel(food.expiryTime)}
+                    </p>
+                  )}
+
+                  {/* 🔥 URGENT */}
+                  {food.description.toLowerCase().includes('urgent') && (
                     <span className="text-xs text-red-500">High Priority</span>
                   )}
                 </div>

@@ -13,6 +13,7 @@ import DashboardPage from './pages/DashboardPage';
 import NotFound from './pages/NotFound';
 import AuthPage from './pages/AuthPage';
 import ProtectedRoute from './components/ProtectedRoute';
+import DonorRequestsPage from './pages/DonorRequestsPage';
 const queryClient = new QueryClient();
 
 const App = () => {
@@ -31,6 +32,14 @@ const App = () => {
               element={
                 <ProtectedRoute>
                   <DonatePage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/requests"
+              element={
+                <ProtectedRoute>
+                  <DonorRequestsPage />
                 </ProtectedRoute>
               }
             />
