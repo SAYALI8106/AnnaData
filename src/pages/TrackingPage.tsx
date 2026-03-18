@@ -1,139 +1,183 @@
-import { motion } from "framer-motion";
-import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, Circle, Truck, Package, MapPin } from "lucide-react";
+import { motion } from 'framer-motion';
+import { useEffect, useState } from 'react';
 
-const activeDeliveries = [
-  {
-    id: "FB-2847",
-    food: "Vegetarian Meals (120 servings)",
-    from: "Taj Restaurant",
-    to: "Hope Foundation Shelter",
-    driver: "Rahul M.",
-    status: "in_transit",
-    eta: "12 min",
-    steps: [
-      { label: "Food Listed", done: true },
-      { label: "AI Matched", done: true },
-      { label: "Picked Up", done: true },
-      { label: "In Transit", done: true },
-      { label: "Delivered", done: false },
-    ],
-  },
-  {
-    id: "FB-2848",
-    food: "Assorted Sandwiches (80 servings)",
-    from: "Marriott Hotel",
-    to: "City Orphanage",
-    driver: "Priya S.",
-    status: "picked_up",
-    eta: "25 min",
-    steps: [
-      { label: "Food Listed", done: true },
-      { label: "AI Matched", done: true },
-      { label: "Picked Up", done: true },
-      { label: "In Transit", done: false },
-      { label: "Delivered", done: false },
-    ],
-  },
-  {
-    id: "FB-2846",
-    food: "Dal & Rice (150 servings)",
-    from: "IIT Hostel Mess",
-    to: "Street Care NGO",
-    driver: "Amit K.",
-    status: "delivered",
-    eta: "Completed",
-    steps: [
-      { label: "Food Listed", done: true },
-      { label: "AI Matched", done: true },
-      { label: "Picked Up", done: true },
-      { label: "In Transit", done: true },
-      { label: "Delivered", done: true },
-    ],
-  },
-];
+import { collection, onSnapshot } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
-const statusBadge: Record<string, { label: string; className: string }> = {
-  in_transit: { label: "In Transit", className: "bg-info/10 text-info border-info/20" },
-  picked_up: { label: "Picked Up", className: "bg-warning/10 text-warning border-warning/20" },
-  delivered: { label: "Delivered", className: "bg-success/10 text-success border-success/20" },
+import { MapContainer, TileLayer, Marker, Polyline } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+
+import L from 'leaflet';
+
+import { Badge } from '@/components/ui/badge';
+import { CheckCircle2, Circle, Truck, Package, MapPin } from 'lucide-react';
+
+type Delivery = {
+  id: string;
+  foodId?: string;
+  pickupLat?: number;
+  pickupLng?: number;
+  dropLat?: number;
+  dropLng?: number;
+  currentLat?: number;
+  currentLng?: number;
+  status?: string;
+};
+
+// ✅ FIX LEAFLET ICON ISSUE
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl:
+    'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon-2x.png',
+  iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
+});
+
+// STATUS BADGE
+const statusBadge: Record<string, string> = {
+  in_transit: 'bg-blue-500/10 text-blue-500 border-blue-500/20',
+  picked_up: 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20',
+  delivered: 'bg-green-500/10 text-green-500 border-green-500/20',
 };
 
 const TrackingPage = () => {
+  const [deliveries, setDeliveries] = useState<Delivery[]>([]);
+  // 🔥 REALTIME FIREBASE
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'deliveries'), (snapshot) => {
+      const data = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      setDeliveries(data);
+    });
+
+    return () => unsub();
+  }, []);
+
   return (
     <div className="min-h-screen pt-24 pb-16">
       <div className="container mx-auto px-4">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-          <h1 className="font-display text-3xl md:text-4xl font-bold text-foreground mb-2">Live Tracking</h1>
-          <p className="text-muted-foreground mb-8">Real-time delivery tracking with GPS updates.</p>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <h1 className="text-3xl md:text-4xl font-bold text-foreground mb-2">
+            Live Tracking
+          </h1>
+
+          <p className="text-muted-foreground mb-8">
+            Real-time delivery tracking with GPS updates
+          </p>
 
           <div className="grid lg:grid-cols-5 gap-6">
-            {/* Map placeholder */}
+            {/* 🗺️ REAL MAP */}
             <div className="lg:col-span-3">
-              <div className="glass-card-elevated p-1 h-[500px] overflow-hidden">
-                <div className="w-full h-full rounded-xl bg-muted flex flex-col items-center justify-center text-muted-foreground relative">
-                  <div className="absolute inset-0 opacity-20">
-                    {/* Simulated route lines */}
-                    <svg className="w-full h-full" viewBox="0 0 600 500">
-                      <path d="M100,400 C200,300 300,350 350,200 S450,100 500,150" stroke="hsl(152,55%,28%)" strokeWidth="3" fill="none" strokeDasharray="8,4" />
-                      <path d="M80,350 C150,250 250,300 400,150" stroke="hsl(38,92%,55%)" strokeWidth="3" fill="none" strokeDasharray="8,4" />
-                      <circle cx="100" cy="400" r="8" fill="hsl(152,55%,28%)" />
-                      <circle cx="500" cy="150" r="8" fill="hsl(38,92%,55%)" />
-                      <circle cx="350" cy="200" r="6" fill="hsl(200,80%,50%)" className="animate-pulse-glow" />
-                      <circle cx="80" cy="350" r="8" fill="hsl(152,55%,28%)" />
-                      <circle cx="400" cy="150" r="8" fill="hsl(38,92%,55%)" />
-                      <circle cx="250" cy="280" r="6" fill="hsl(200,80%,50%)" className="animate-pulse-glow" />
-                    </svg>
-                  </div>
-                  <MapPin className="w-12 h-12 mb-3 text-primary" />
-                  <p className="font-display font-semibold">Live Map View</p>
-                  <p className="text-sm">Google Maps / OpenStreetMap integration</p>
-                </div>
+              <div className="h-[500px] rounded-xl overflow-hidden border">
+                <MapContainer
+                  center={[19.99, 73.78] as [number, number]}
+                  zoom={13}
+                  className="h-full w-full"
+                >
+                  <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+
+                  {deliveries.map((d) => (
+                    <>
+                      {/* DRIVER */}
+                      {d.currentLat && d.currentLng && (
+                        <Marker position={[d.currentLat, d.currentLng]} />
+                      )}
+
+                      {/* PICKUP */}
+                      {d.pickupLat && d.pickupLng && (
+                        <Marker position={[d.pickupLat, d.pickupLng]} />
+                      )}
+
+                      {/* DROP */}
+                      {d.dropLat && d.dropLng && (
+                        <Marker position={[d.dropLat, d.dropLng]} />
+                      )}
+
+                      {/* ROUTE */}
+                      {d.pickupLat && d.currentLat && (
+                        <Polyline
+                          positions={[
+                            [d.pickupLat, d.pickupLng],
+                            [d.currentLat, d.currentLng],
+                            [d.dropLat, d.dropLng],
+                          ]}
+                        />
+                      )}
+                    </>
+                  ))}
+                </MapContainer>
               </div>
             </div>
 
-            {/* Deliveries list */}
+            {/* 📦 DELIVERY LIST */}
             <div className="lg:col-span-2 space-y-4">
-              {activeDeliveries.map((d, i) => (
+              {deliveries.length === 0 && (
+                <p className="text-muted-foreground">No active deliveries</p>
+              )}
+
+              {deliveries.map((d, i) => (
                 <motion.div
                   key={d.id}
                   initial={{ opacity: 0, x: 20 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: i * 0.1 }}
-                  className="glass-card-elevated p-5"
+                  className="p-5 border rounded-xl bg-card"
                 >
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="font-display font-semibold text-foreground text-sm">{d.id}</span>
-                    <Badge variant="outline" className={statusBadge[d.status].className}>
-                      {statusBadge[d.status].label}
+                  {/* HEADER */}
+                  <div className="flex justify-between mb-3">
+                    <span className="font-semibold text-sm">{d.id}</span>
+
+                    <Badge
+                      variant="outline"
+                      className={statusBadge[d.status] || ''}
+                    >
+                      {d.status}
                     </Badge>
                   </div>
-                  <p className="text-sm font-medium text-foreground mb-1">{d.food}</p>
-                  <div className="text-xs text-muted-foreground mb-3 space-y-0.5">
-                    <p className="flex items-center gap-1"><Package className="w-3 h-3" />{d.from}</p>
-                    <p className="flex items-center gap-1"><MapPin className="w-3 h-3" />{d.to}</p>
-                    <p className="flex items-center gap-1"><Truck className="w-3 h-3" />{d.driver} · ETA: {d.eta}</p>
+
+                  {/* FOOD */}
+                  <p className="text-sm font-medium mb-1">
+                    {d.foodId || 'Food Item'}
+                  </p>
+
+                  {/* DETAILS */}
+                  <div className="text-xs text-muted-foreground mb-3 space-y-1">
+                    <p className="flex items-center gap-1">
+                      <Package className="w-3 h-3" />
+                      Pickup: {d.pickupLat?.toFixed(3)},{' '}
+                      {d.pickupLng?.toFixed(3)}
+                    </p>
+
+                    <p className="flex items-center gap-1">
+                      <MapPin className="w-3 h-3" />
+                      Drop: {d.dropLat?.toFixed(3)}, {d.dropLng?.toFixed(3)}
+                    </p>
+
+                    <p className="flex items-center gap-1">
+                      <Truck className="w-3 h-3" />
+                      Status: {d.status}
+                    </p>
                   </div>
-                  {/* Progress steps */}
+
+                  {/* SIMPLE PROGRESS */}
                   <div className="flex items-center gap-1">
-                    {d.steps.map((step, si) => (
-                      <div key={si} className="flex items-center gap-1 flex-1">
-                        {step.done ? (
-                          <CheckCircle2 className="w-4 h-4 text-primary shrink-0" />
+                    {['picked_up', 'in_transit', 'delivered'].map((s, idx) => (
+                      <div key={idx} className="flex items-center gap-1 flex-1">
+                        {d.status === s || d.status === 'delivered' ? (
+                          <CheckCircle2 className="w-4 h-4 text-primary" />
                         ) : (
-                          <Circle className="w-4 h-4 text-muted-foreground/30 shrink-0" />
+                          <Circle className="w-4 h-4 text-muted-foreground/30" />
                         )}
-                        {si < d.steps.length - 1 && (
-                          <div className={`h-0.5 flex-1 rounded ${step.done ? "bg-primary" : "bg-muted"}`} />
+
+                        {idx < 2 && (
+                          <div className="h-0.5 flex-1 bg-muted rounded" />
                         )}
                       </div>
-                    ))}
-                  </div>
-                  <div className="flex gap-2 mt-1">
-                    {d.steps.map((step, si) => (
-                      <span key={si} className={`text-[10px] flex-1 ${step.done ? "text-primary" : "text-muted-foreground/40"}`}>
-                        {si === 0 ? "Listed" : si === 1 ? "Matched" : si === 2 ? "Pickup" : si === 3 ? "Transit" : "Done"}
-                      </span>
                     ))}
                   </div>
                 </motion.div>
